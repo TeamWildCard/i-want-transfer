@@ -85,7 +85,6 @@ export function PinballStage({
 }: StageComponentProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const callbacksRef = useRef({ onSuccess, onUpdateAmount });
-  const configRef = useRef(config);
   const amountRef = useRef(config.startAmount);
   const chargeRef = useRef(0);
   const chargingRef = useRef(false);
@@ -105,10 +104,6 @@ export function PinballStage({
   useEffect(() => {
     callbacksRef.current = { onSuccess, onUpdateAmount };
   }, [onSuccess, onUpdateAmount]);
-
-  useEffect(() => {
-    configRef.current = config;
-  }, [config]);
 
   const drawScene = useCallback((chargeValue: number) => {
     const canvas = canvasRef.current;
@@ -146,11 +141,7 @@ export function PinballStage({
     ctx.fillStyle = '#0F172A';
     ctx.font = '700 26px Apple SD Gothic Neo, Pretendard, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(
-      `${configRef.current.targetAmount.toLocaleString('ko-KR')}원`,
-      CANVAS_WIDTH / 2,
-      52,
-    );
+    ctx.fillText('3,000원', CANVAS_WIDTH / 2, 52);
     ctx.font = '500 16px Apple SD Gothic Neo, Pretendard, sans-serif';
     ctx.fillStyle = 'rgba(15, 23, 42, 0.56)';
     ctx.fillText('범퍼를 맞춰 정확히 도달하세요', CANVAS_WIDTH / 2, 76);
