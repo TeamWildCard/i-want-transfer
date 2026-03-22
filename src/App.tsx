@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { ResultOverlay } from './game/components/ResultOverlay';
 import { STAGES } from './game/config/stages';
 import { useStageTimer } from './game/hooks/useStageTimer';
-import { clamp, formatCurrency } from './game/utils/game';
+import { clamp, formatCountdown, formatCurrency } from './game/utils/game';
 import './App.css';
 
 type IntroStep = 0 | 1 | 2;
@@ -247,6 +247,11 @@ function App() {
                     key="amount"
                     transition={{ duration: 0.35 }}
                   >
+                    <div className="phone-topbar">
+                      <span className="story-badge">{currentStage.chapter}</span>
+                      <span className="timer-badge">{formatCountdown(remainingSeconds)}</span>
+                    </div>
+
                     <section className="transfer-card">
                       <span className="transfer-card__label">받는 사람</span>
                       <strong className="transfer-card__recipient">따끈붕어빵 사장님</strong>
@@ -318,7 +323,7 @@ function App() {
 
               {phase === 'game-over' ? (
                 <ResultOverlay
-                  body="30초를 넘겨 버렸어요. 다시 첫 챕터부터 3,000원을 맞춰봅시다."
+                  body="30초를 넘겼어요. 다시 처음부터 3,000원을 맞춰봅시다."
                   ctaLabel="다시 시도"
                   onAction={() => resetGame('playing')}
                   title="게임 오버"
@@ -327,7 +332,7 @@ function App() {
 
               {phase === 'completed' ? (
                 <ResultOverlay
-                  body="따끈붕어빵 사장님께 정확히 3,000원을 보냈어요. 의도적인 불편함 속에서도 송금 성공입니다."
+                  body="세 스테이지를 모두 통과해 따끈붕어빵 사장님께 3,000원을 보냈어요."
                   ctaLabel="한 번 더 플레이"
                   onAction={() => resetGame('playing')}
                   onSecondary={() => resetGame('intro')}

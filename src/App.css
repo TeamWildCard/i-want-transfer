@@ -642,6 +642,9 @@
   background: #3182f6;
 }
 
+.arc-stage,
+.curling-stage,
+.breakout-stage,
 .painting-stage,
 .pinball-stage {
   display: grid;
@@ -650,11 +653,17 @@
   width: 100%;
 }
 
+.arc-stage--compact,
+.curling-stage--compact,
+.breakout-stage--compact,
 .painting-stage--compact,
 .pinball-stage--compact {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.arc-stage__canvas,
+.curling-stage__canvas,
+.breakout-stage__canvas,
 .painting-stage__canvas,
 .pinball-stage__canvas {
   background: rgba(255, 255, 255, 0.74);
@@ -666,6 +675,7 @@
   width: 100%;
 }
 
+.curling-stage__controls,
 .painting-stage__stats,
 .pinball-stage__controls {
   display: grid;

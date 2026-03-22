@@ -1,35 +1,40 @@
-import { Button } from '@toss/tds-mobile';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import type { StageComponentProps } from '../types';
 import { clamp, vibrate } from '../utils/game';
 
 const CANVAS_WIDTH = 560;
 const CANVAS_HEIGHT = 320;
+const BALL_RADIUS = 11;
+const PADDLE_Y = CANVAS_HEIGHT - 32;
+const BLOCK_VALUE = 300;
+const BLOCK_COLUMNS = 5;
+const BLOCK_ROWS = 2;
 
 interface Ball {
+  r: number;
+  serveAt: number;
+  stuck: boolean;
+  vx: number;
+  vy: number;
+  x: number;
+  y: number;
+}
+
+interface Block {
   active: boolean;
-  r: number;
-  vx: number;
-  vy: number;
-  x: number;
-  y: number;
-}
-
-interface Bumper {
   color: string;
-  cooldown: number;
-  r: number;
+  height: number;
   value: number;
+  width: number;
   x: number;
   y: number;
 }
 
-interface Spark {
-  color: string;
-  life: number;
-  vx: number;
-  vy: number;
+interface Paddle {
+  height: number;
+  width: number;
   x: number;
   y: number;
 }
@@ -55,57 +60,78 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
-function createBumpers(): Bumper[] {
-  return [
-    { color: '#F97316', cooldown: 0, r: 34, value: 100, x: 120, y: 150 },
-    { color: '#0EA5E9', cooldown: 0, r: 32, value: 100, x: 280, y: 112 },
-    { color: '#8B5CF6', cooldown: 0, r: 34, value: 100, x: 440, y: 150 },
-    { color: '#10B981', cooldown: 0, r: 30, value: 100, x: 198, y: 238 },
-    { color: '#EF4444', cooldown: 0, r: 30, value: 100, x: 362, y: 238 },
-  ];
+function createPaddle(): Paddle {
+  return {
+    height: 14,
+    width: 112,
+    x: CANVAS_WIDTH / 2,
+    y: PADDLE_Y,
+  };
 }
 
-function createBall(): Ball {
+function createBlocks(): Block[] {
+  const gap = 10;
+  const blockWidth = 94;
+  const blockHeight = 34;
+  const colors = ['#60A5FA', '#34D399', '#FBBF24', '#FB7185', '#A78BFA'];
+
+  return Array.from({ length: BLOCK_COLUMNS * BLOCK_ROWS }, (_, index) => {
+    const row = Math.floor(index / BLOCK_COLUMNS);
+    const column = index % BLOCK_COLUMNS;
+    const totalWidth = BLOCK_COLUMNS * blockWidth + (BLOCK_COLUMNS - 1) * gap;
+    const startX = (CANVAS_WIDTH - totalWidth) / 2;
+
+    return {
+      active: true,
+      color: colors[column % colors.length],
+      height: blockHeight,
+      value: BLOCK_VALUE,
+      width: blockWidth,
+      x: startX + column * (blockWidth + gap),
+      y: 42 + row * (blockHeight + 12),
+    };
+  });
+}
+
+function createBall(paddleX: number, serveAt: number): Ball {
   return {
-    active: false,
-    r: 16,
+    r: BALL_RADIUS,
+    serveAt,
+    stuck: true,
     vx: 0,
     vy: 0,
-    x: CANVAS_WIDTH / 2,
-    y: CANVAS_HEIGHT - 52,
+    x: paddleX,
+    y: PADDLE_Y - BALL_RADIUS - 4,
   };
 }
 
 export function PinballStage({
   active,
   config,
-  totalAmount,
   onSuccess,
   onUpdateAmount,
 }: StageComponentProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const callbacksRef = useRef({ onSuccess, onUpdateAmount });
   const amountRef = useRef(config.startAmount);
-  const chargeRef = useRef(0);
-  const chargingRef = useRef(false);
-  const wallHapticCooldownRef = useRef(0);
   const successRef = useRef(false);
+  const serveDirectionRef = useRef(1);
+  const dragPointerRef = useRef<number | null>(null);
   const sceneRef = useRef<{
     ball: Ball;
-    bumpers: Bumper[];
-    sparks: Spark[];
+    blocks: Block[];
+    paddle: Paddle;
   }>({
-    ball: createBall(),
-    bumpers: createBumpers(),
-    sparks: [],
+    ball: createBall(CANVAS_WIDTH / 2, 0),
+    blocks: createBlocks(),
+    paddle: createPaddle(),
   });
-  const [chargeDisplay, setChargeDisplay] = useState(0);
 
   useEffect(() => {
     callbacksRef.current = { onSuccess, onUpdateAmount };
   }, [onSuccess, onUpdateAmount]);
 
-  const drawScene = useCallback((chargeValue: number) => {
+  const drawScene = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
@@ -134,43 +160,53 @@ export function PinballStage({
     drawRoundedRect(ctx, 22, 24, CANVAS_WIDTH - 44, CANVAS_HEIGHT - 48, 28);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.06)';
-    drawRoundedRect(ctx, CANVAS_WIDTH / 2 - 42, CANVAS_HEIGHT - 124, 84, 74, 20);
-    ctx.fill();
+    scene.blocks.forEach((block) => {
+      if (!block.active) {
+        return;
+      }
 
-    ctx.fillStyle = '#0F172A';
-    ctx.font = '700 26px Apple SD Gothic Neo, Pretendard, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('3,000원', CANVAS_WIDTH / 2, 52);
-    ctx.font = '500 16px Apple SD Gothic Neo, Pretendard, sans-serif';
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.56)';
-    ctx.fillText('범퍼를 맞춰 정확히 도달하세요', CANVAS_WIDTH / 2, 76);
-
-    scene.bumpers.forEach((bumper) => {
-      ctx.beginPath();
-      ctx.fillStyle = `${bumper.color}${bumper.cooldown > 0 ? 'EE' : 'CC'}`;
-      ctx.arc(bumper.x, bumper.y, bumper.r, 0, Math.PI * 2);
+      ctx.fillStyle = `${block.color}22`;
+      drawRoundedRect(ctx, block.x, block.y, block.width, block.height, 14);
       ctx.fill();
 
-      ctx.beginPath();
-      ctx.lineWidth = 10;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
-      ctx.arc(bumper.x, bumper.y, bumper.r - 5, 0, Math.PI * 2);
+      ctx.fillStyle = block.color;
+      drawRoundedRect(ctx, block.x, block.y, block.width, 12, 10);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, block.x, block.y, block.width, block.height, 14);
       ctx.stroke();
 
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '700 18px Apple SD Gothic Neo, Pretendard, sans-serif';
-      ctx.fillText('+100', bumper.x, bumper.y + 6);
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '800 18px Pretendard, Apple SD Gothic Neo, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('300', block.x + block.width / 2, block.y + block.height / 2 + 3);
     });
 
-    scene.sparks.forEach((spark) => {
-      ctx.beginPath();
-      ctx.fillStyle = spark.color;
-      ctx.globalAlpha = spark.life;
-      ctx.arc(spark.x, spark.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    });
+    const paddle = scene.paddle;
+    ctx.fillStyle = '#0F172A';
+    drawRoundedRect(
+      ctx,
+      paddle.x - paddle.width / 2,
+      paddle.y - paddle.height / 2,
+      paddle.width,
+      paddle.height,
+      7,
+    );
+    ctx.fill();
+
+    ctx.fillStyle = '#E2E8F0';
+    drawRoundedRect(
+      ctx,
+      paddle.x - paddle.width / 2 + 12,
+      paddle.y - paddle.height / 2 + 3,
+      paddle.width - 24,
+      4,
+      2,
+    );
+    ctx.fill();
 
     const ball = scene.ball;
     ctx.beginPath();
@@ -182,33 +218,20 @@ export function PinballStage({
     ctx.fillStyle = '#FFFFFF';
     ctx.arc(ball.x - 4, ball.y - 4, 4, 0, Math.PI * 2);
     ctx.fill();
-
-    const powerHeight = 110 * chargeValue;
-    ctx.fillStyle = 'rgba(49, 130, 246, 0.12)';
-    drawRoundedRect(ctx, 46, CANVAS_HEIGHT - 158, 16, 110, 8);
-    ctx.fill();
-    ctx.fillStyle = '#3182F6';
-    drawRoundedRect(ctx, 46, CANVAS_HEIGHT - 48 - powerHeight, 16, powerHeight, 8);
-    ctx.fill();
   }, []);
-
-  useEffect(() => {
-    amountRef.current = totalAmount;
-  }, [totalAmount]);
 
   useEffect(() => {
     successRef.current = false;
     amountRef.current = config.startAmount;
-    chargeRef.current = 0;
-    chargingRef.current = false;
-    wallHapticCooldownRef.current = 0;
+    serveDirectionRef.current = 1;
+    const paddle = createPaddle();
     sceneRef.current = {
-      ball: createBall(),
-      bumpers: createBumpers(),
-      sparks: [],
+      ball: createBall(paddle.x, performance.now() + 500),
+      blocks: createBlocks(),
+      paddle,
     };
     callbacksRef.current.onUpdateAmount(config.startAmount);
-    drawScene(0);
+    drawScene();
   }, [config.id, config.startAmount, drawScene]);
 
   useEffect(() => {
@@ -225,113 +248,110 @@ export function PinballStage({
 
       const scene = sceneRef.current;
       const ball = scene.ball;
+      const paddle = scene.paddle;
 
-      if (chargingRef.current && !ball.active) {
-        chargeRef.current = clamp(chargeRef.current + dt * 0.9, 0, 1);
-        setChargeDisplay(chargeRef.current);
-      }
+      if (ball.stuck) {
+        ball.x = paddle.x;
+        ball.y = paddle.y - ball.r - 4;
 
-      wallHapticCooldownRef.current = Math.max(0, wallHapticCooldownRef.current - dt);
-      scene.bumpers.forEach((bumper) => {
-        bumper.cooldown = Math.max(0, bumper.cooldown - dt);
-      });
-      scene.sparks = scene.sparks
-        .map((spark) => ({
-          ...spark,
-          life: spark.life - dt * 2.2,
-          x: spark.x + spark.vx * dt,
-          y: spark.y + spark.vy * dt,
-        }))
-        .filter((spark) => spark.life > 0);
-
-      if (ball.active) {
-        ball.vy += 860 * dt;
+        if (now >= ball.serveAt && !successRef.current) {
+          ball.stuck = false;
+          ball.vx = 190 * serveDirectionRef.current;
+          ball.vy = -290;
+          serveDirectionRef.current *= -1;
+        }
+      } else {
         ball.x += ball.vx * dt;
         ball.y += ball.vy * dt;
+        ball.vx = clamp(ball.vx, -380, 380);
+        ball.vy = clamp(ball.vy, -420, 420);
 
-        if (ball.x <= 40 + ball.r || ball.x >= CANVAS_WIDTH - 40 - ball.r) {
-          ball.x = clamp(ball.x, 40 + ball.r, CANVAS_WIDTH - 40 - ball.r);
-          ball.vx *= -0.92;
-
-          if (wallHapticCooldownRef.current <= 0) {
-            wallHapticCooldownRef.current = 0.14;
-            vibrate(50);
-          }
+        if (ball.x <= 34 + ball.r || ball.x >= CANVAS_WIDTH - 34 - ball.r) {
+          ball.x = clamp(ball.x, 34 + ball.r, CANVAS_WIDTH - 34 - ball.r);
+          ball.vx *= -1;
+          vibrate(8);
         }
 
-        if (ball.y <= 42 + ball.r) {
-          ball.y = 42 + ball.r;
-          ball.vy *= -0.88;
-
-          if (wallHapticCooldownRef.current <= 0) {
-            wallHapticCooldownRef.current = 0.14;
-            vibrate(50);
-          }
+        if (ball.y <= 34 + ball.r) {
+          ball.y = 34 + ball.r;
+          ball.vy = Math.abs(ball.vy);
         }
 
-        scene.bumpers.forEach((bumper) => {
-          const dx = ball.x - bumper.x;
-          const dy = ball.y - bumper.y;
-          const distance = Math.hypot(dx, dy);
-          const minDistance = ball.r + bumper.r;
+        const paddleLeft = paddle.x - paddle.width / 2;
+        const paddleRight = paddle.x + paddle.width / 2;
+        const paddleTop = paddle.y - paddle.height / 2;
+        const paddleBottom = paddle.y + paddle.height / 2;
 
-          if (distance >= minDistance || bumper.cooldown > 0) {
-            return;
+        const intersectsPaddle =
+          ball.x + ball.r >= paddleLeft &&
+          ball.x - ball.r <= paddleRight &&
+          ball.y + ball.r >= paddleTop &&
+          ball.y - ball.r <= paddleBottom &&
+          ball.vy > 0;
+
+        if (intersectsPaddle) {
+          const hitRatio = (ball.x - paddle.x) / (paddle.width / 2);
+          ball.y = paddleTop - ball.r - 1;
+          ball.vx = hitRatio * 300;
+          ball.vy = -Math.max(240, Math.abs(ball.vy) * 0.96 + 18);
+          vibrate(10);
+        }
+
+        for (const block of scene.blocks) {
+          if (!block.active) {
+            continue;
           }
 
-          const nx = distance === 0 ? 0 : dx / distance;
-          const ny = distance === 0 ? -1 : dy / distance;
-          const overlap = minDistance - distance + 1;
-          const projectedVelocity = ball.vx * nx + ball.vy * ny;
+          const intersectsBlock =
+            ball.x + ball.r >= block.x &&
+            ball.x - ball.r <= block.x + block.width &&
+            ball.y + ball.r >= block.y &&
+            ball.y - ball.r <= block.y + block.height;
 
-          ball.x += nx * overlap;
-          ball.y += ny * overlap;
-          ball.vx -= 2 * projectedVelocity * nx;
-          ball.vy -= 2 * projectedVelocity * ny;
-          ball.vx += nx * 120;
-          ball.vy += ny * 120;
+          if (!intersectsBlock) {
+            continue;
+          }
 
-          bumper.cooldown = 0.18;
-          vibrate(50);
+          const overlapLeft = ball.x + ball.r - block.x;
+          const overlapRight = block.x + block.width - (ball.x - ball.r);
+          const overlapTop = ball.y + ball.r - block.y;
+          const overlapBottom = block.y + block.height - (ball.y - ball.r);
+          const minOverlapX = Math.min(overlapLeft, overlapRight);
+          const minOverlapY = Math.min(overlapTop, overlapBottom);
 
-          scene.sparks.push(
-            ...Array.from({ length: 8 }, (_, index) => ({
-              color: bumper.color,
-              life: 1,
-              vx: Math.cos((Math.PI * 2 * index) / 8) * 120,
-              vy: Math.sin((Math.PI * 2 * index) / 8) * 120,
-              x: bumper.x,
-              y: bumper.y,
-            })),
+          block.active = false;
+          if (minOverlapX < minOverlapY) {
+            ball.vx *= -1;
+          } else {
+            ball.vy *= -1;
+          }
+
+          const nextAmount = clamp(
+            amountRef.current + block.value,
+            config.startAmount,
+            config.targetAmount,
           );
+          amountRef.current = nextAmount;
+          callbacksRef.current.onUpdateAmount(nextAmount);
+          vibrate(14);
 
-          if (!successRef.current) {
-            const nextAmount = clamp(
-              amountRef.current + bumper.value,
-              config.startAmount,
-              config.targetAmount,
-            );
-            amountRef.current = nextAmount;
-            callbacksRef.current.onUpdateAmount(nextAmount);
-
-            if (nextAmount >= config.targetAmount) {
-              successRef.current = true;
-              ball.active = false;
-              chargeRef.current = 0;
-              setChargeDisplay(0);
-              callbacksRef.current.onSuccess();
-            }
+          if (nextAmount >= config.targetAmount && !successRef.current) {
+            successRef.current = true;
+            ball.stuck = true;
+            ball.vx = 0;
+            ball.vy = 0;
+            callbacksRef.current.onSuccess();
           }
-        });
+          break;
+        }
 
-        if (ball.y >= CANVAS_HEIGHT + 32) {
-          scene.ball = createBall();
-          chargeRef.current = 0;
-          setChargeDisplay(0);
+        if (ball.y - ball.r > CANVAS_HEIGHT) {
+          scene.ball = createBall(paddle.x, now + 480);
+          vibrate(18);
         }
       }
 
-      drawScene(chargeRef.current);
+      drawScene();
       frameId = window.requestAnimationFrame(tick);
     };
 
@@ -341,61 +361,59 @@ export function PinballStage({
     };
   }, [active, config.startAmount, config.targetAmount, drawScene]);
 
-  const handleChargeStart = () => {
-    if (!active || successRef.current || sceneRef.current.ball.active) {
-      return;
-    }
-
-    chargingRef.current = true;
+  const updatePaddle = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const nextX =
+      ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH;
+    sceneRef.current.paddle.x = clamp(
+      nextX,
+      sceneRef.current.paddle.width / 2 + 34,
+      CANVAS_WIDTH - sceneRef.current.paddle.width / 2 - 34,
+    );
   };
 
-  const handleChargeEnd = () => {
-    if (!chargingRef.current || successRef.current || sceneRef.current.ball.active) {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!active) {
       return;
     }
 
-    chargingRef.current = false;
-    const power = Math.max(0.18, chargeRef.current);
+    dragPointerRef.current = event.pointerId;
+    updatePaddle(event);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawScene();
+  };
 
-    sceneRef.current.ball = {
-      active: true,
-      r: 16,
-      vx: (power - 0.5) * 360,
-      vy: -(560 + power * 520),
-      x: CANVAS_WIDTH / 2,
-      y: CANVAS_HEIGHT - 56,
-    };
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (dragPointerRef.current !== event.pointerId) {
+      return;
+    }
 
-    chargeRef.current = 0;
-    setChargeDisplay(0);
-    vibrate(18);
+    updatePaddle(event);
+    drawScene();
+  };
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (dragPointerRef.current !== event.pointerId) {
+      return;
+    }
+
+    dragPointerRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   return (
     <div className="stage-slot-game">
-      <div className="pinball-stage pinball-stage--compact">
+      <div className="breakout-stage breakout-stage--compact">
         <canvas
-          className="pinball-stage__canvas"
+          className="breakout-stage__canvas"
           height={CANVAS_HEIGHT}
+          onPointerCancel={handlePointerEnd}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerEnd}
           ref={canvasRef}
           width={CANVAS_WIDTH}
         />
-
-        <div className="pinball-stage__controls">
-          <Button
-            color="primary"
-            display="full"
-            onPointerCancel={handleChargeEnd}
-            onPointerDown={handleChargeStart}
-            onPointerLeave={handleChargeEnd}
-            onPointerUp={handleChargeEnd}
-            size="large"
-          >
-            {chargeDisplay > 0
-              ? `발사 준비 ${Math.round(chargeDisplay * 100)}%`
-              : 'Launch'}
-          </Button>
-        </div>
       </div>
     </div>
   );
