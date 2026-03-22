@@ -19,6 +19,7 @@ export interface StageDefinition {
   ctaLabel: string;
   startAmount: number;
   targetAmount: number;
+  maxAmount?: number;
   durationSeconds: number;
   Component: ComponentType<StageComponentProps>;
 }

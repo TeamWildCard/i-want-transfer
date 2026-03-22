@@ -1,46 +1,48 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
-import { useCallback, useEffect, useRef } from 'react';
+import { Button } from '@toss/tds-mobile';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { StageComponentProps } from '../types';
-import { clamp, formatCurrency, vibrate } from '../utils/game';
+import { clamp, vibrate } from '../utils/game';
 
 const CANVAS_WIDTH = 560;
 const CANVAS_HEIGHT = 320;
-const BALL_RADIUS = 14;
-const SLOT_FRAME_X = 22;
-const SLOT_FRAME_WIDTH = CANVAS_WIDTH - SLOT_FRAME_X * 2;
-const SLOT_HEIGHT = 62;
-const SLOT_TOP = CANVAS_HEIGHT - SLOT_HEIGHT - 20;
-const LAUNCH_POINT = { x: 84, y: SLOT_TOP - 26 };
-const GRAVITY = 900;
-const SLOT_VALUES = [500, 1100, 1800, 2400, 3000];
-const TARGET_VALUE = 3000;
-const RESET_DELAY_MS = 760;
-const SLOT_COLORS = ['#C7D2FE', '#93C5FD', '#86EFAC', '#FDE68A', '#60A5FA'];
+const FLOOR_Y = 232;
+const AXIS_Y = 252;
+const WORLD_AXIS_LEFT = 40;
+const WORLD_AXIS_RIGHT = 2140;
+const WORLD_MAX = 5000;
+const TICK_STEP = 500;
+const TARGET_MIN = 2910;
+const TARGET_MAX = 3090;
+const RESET_DELAY_MS = 820;
+const GRAVITY = 2100;
+const START_X = WORLD_AXIS_LEFT + 12;
+const START_Y = FLOOR_Y;
+const CAMERA_FOCUS_X = 192;
+const CAMERA_MAX_X = WORLD_AXIS_RIGHT - (CANVAS_WIDTH - 24);
+const MIN_POWER = 0.04;
+const POWER_CHARGE_RATE = 0.42;
+const ANGLE_BASE = -52;
+const ANGLE_SWEEP = 14;
+const SPEED_BASE = 820;
+const SPEED_BY_POWER = 880;
+const BOUNCE_Y_DAMP_FIRST = 0.56;
+const BOUNCE_Y_DAMP_SECOND = 0.48;
+const BOUNCE_X_DAMP = 0.88;
 
-interface BallState {
+interface MissileState {
   active: boolean;
-  x: number;
-  y: number;
+  bounces: number;
   vx: number;
   vy: number;
-}
-
-interface AimState {
-  active: boolean;
-  pointerId: number | null;
   x: number;
   y: number;
 }
 
-function createBall(): BallState {
-  return {
-    active: false,
-    x: LAUNCH_POINT.x,
-    y: LAUNCH_POINT.y,
-    vx: 0,
-    vy: 0,
-  };
+interface TrailPoint {
+  life: number;
+  x: number;
+  y: number;
 }
 
 function drawRoundedRect(
@@ -64,6 +66,25 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
+function amountToX(amount: number) {
+  return WORLD_AXIS_LEFT + (clamp(amount, 0, WORLD_MAX) / WORLD_MAX) * (WORLD_AXIS_RIGHT - WORLD_AXIS_LEFT);
+}
+
+function xToAmount(x: number) {
+  return ((x - WORLD_AXIS_LEFT) / (WORLD_AXIS_RIGHT - WORLD_AXIS_LEFT)) * WORLD_MAX;
+}
+
+function createMissile(): MissileState {
+  return {
+    active: false,
+    bounces: 0,
+    vx: 0,
+    vy: 0,
+    x: START_X,
+    y: START_Y,
+  };
+}
+
 export function BalanceBarStage({
   active,
   config,
@@ -71,155 +92,194 @@ export function BalanceBarStage({
   onUpdateAmount,
 }: StageComponentProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const aimRef = useRef<AimState>({
-    active: false,
-    pointerId: null,
-    x: LAUNCH_POINT.x + 72,
-    y: LAUNCH_POINT.y - 72,
-  });
   const callbacksRef = useRef({ onSuccess, onUpdateAmount });
-  const ballRef = useRef(createBall());
-  const landedSlotRef = useRef<number | null>(null);
+  const missileRef = useRef<MissileState>(createMissile());
+  const trailRef = useRef<TrailPoint[]>([]);
+  const cameraXRef = useRef(0);
   const successRef = useRef(false);
   const resetTimeoutRef = useRef<number | null>(null);
+  const landedAmountRef = useRef<number | null>(null);
+  const [holdDisplay, setHoldDisplay] = useState(0);
+
+  const holdRef = useRef({
+    active: false,
+    elapsed: 0,
+    power: MIN_POWER,
+    sweepDirection: 1,
+    sweepNormalized: 0.08,
+  });
 
   useEffect(() => {
     callbacksRef.current = { onSuccess, onUpdateAmount };
   }, [onSuccess, onUpdateAmount]);
 
-  const resetBall = useCallback(() => {
-    ballRef.current = createBall();
-    landedSlotRef.current = null;
-    aimRef.current.active = false;
-    aimRef.current.pointerId = null;
+  const resetMissile = useCallback(() => {
+    missileRef.current = createMissile();
+    trailRef.current = [];
+    landedAmountRef.current = null;
+    holdRef.current.active = false;
+    holdRef.current.elapsed = 0;
+    holdRef.current.power = MIN_POWER;
+    holdRef.current.sweepDirection = 1;
+    holdRef.current.sweepNormalized = 0.08;
+    cameraXRef.current = 0;
+    setHoldDisplay(0);
   }, []);
-
-  const getLaunchVelocity = (pointerX: number, pointerY: number) => ({
-    vx: clamp(pointerX - LAUNCH_POINT.x, 24, 210) * 2.65,
-    vy: clamp(pointerY - LAUNCH_POINT.y, -190, -22) * 2.6,
-  });
 
   const drawScene = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
-
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       return;
     }
 
-    const slotWidth = SLOT_FRAME_WIDTH / SLOT_VALUES.length;
-    const ball = ballRef.current;
-    const aim = aimRef.current;
+    const hold = holdRef.current;
+    const missile = missileRef.current;
+    const cameraX = cameraXRef.current;
 
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    const background = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    background.addColorStop(0, '#F8FBFF');
-    background.addColorStop(1, '#EAF3FF');
-    ctx.fillStyle = background;
+    const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    bg.addColorStop(0, '#F7FBFF');
+    bg.addColorStop(1, '#E8F2FF');
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-    drawRoundedRect(ctx, 20, 18, CANVAS_WIDTH - 40, SLOT_TOP - 8, 30);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    drawRoundedRect(ctx, 16, 14, CANVAS_WIDTH - 32, CANVAS_HEIGHT - 28, 28);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(49, 130, 246, 0.1)';
-    ctx.lineWidth = 1;
-    for (let x = 40; x < CANVAS_WIDTH - 20; x += 38) {
+    ctx.fillStyle = 'rgba(49, 130, 246, 0.08)';
+    drawRoundedRect(ctx, 24, 22, CANVAS_WIDTH - 48, 36, 16);
+    ctx.fill();
+    ctx.fillStyle = '#1D4ED8';
+    ctx.font = '700 15px Pretendard, Apple SD Gothic Neo, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('미사일 발사 후 바닥 3회 반사', 38, 40);
+
+    const targetXMin = amountToX(TARGET_MIN);
+    const targetXMax = amountToX(TARGET_MAX);
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.13)';
+    drawRoundedRect(ctx, targetXMin - cameraX, AXIS_Y - 18, targetXMax - targetXMin, 20, 8);
+    ctx.fill();
+
+    ctx.strokeStyle = '#0F172A';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(WORLD_AXIS_LEFT - cameraX, AXIS_Y);
+    ctx.lineTo(WORLD_AXIS_RIGHT - cameraX, AXIS_Y);
+    ctx.stroke();
+
+    for (let mark = TICK_STEP; mark <= WORLD_MAX; mark += TICK_STEP) {
+      const x = amountToX(mark) - cameraX;
+      if (x < -30 || x > CANVAS_WIDTH + 30) {
+        continue;
+      }
+      const isMajor = mark % 1000 === 0;
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = isMajor ? 3 : 2;
       ctx.beginPath();
-      ctx.moveTo(x, 24);
-      ctx.lineTo(x + 18, SLOT_TOP - 18);
+      ctx.moveTo(x, AXIS_Y - (isMajor ? 14 : 10));
+      ctx.lineTo(x, AXIS_Y + (isMajor ? 14 : 10));
       ctx.stroke();
-    }
-
-    SLOT_VALUES.forEach((value, index) => {
-      const x = SLOT_FRAME_X + slotWidth * index;
-      const isTarget = value === TARGET_VALUE;
-      const isLanded = landedSlotRef.current === index;
-
-      ctx.save();
-      ctx.fillStyle = isTarget ? 'rgba(37, 99, 235, 0.16)' : 'rgba(255, 255, 255, 0.92)';
-      drawRoundedRect(ctx, x + 4, SLOT_TOP, slotWidth - 8, SLOT_HEIGHT, 18);
-      ctx.fill();
-
-      ctx.strokeStyle = isLanded
-        ? 'rgba(15, 23, 42, 0.24)'
-        : isTarget
-          ? 'rgba(37, 99, 235, 0.42)'
-          : 'rgba(15, 23, 42, 0.08)';
-      ctx.lineWidth = isTarget ? 3 : 1.5;
-      ctx.stroke();
-
-      ctx.fillStyle = SLOT_COLORS[index];
-      drawRoundedRect(ctx, x + 12, SLOT_TOP + 10, slotWidth - 24, 12, 6);
-      ctx.fill();
 
       ctx.fillStyle = '#0F172A';
-      ctx.font = `800 ${isTarget ? 24 : 20}px Pretendard, Apple SD Gothic Neo, sans-serif`;
+      ctx.font = `${isMajor ? '700 12px' : '600 11px'} Pretendard, Apple SD Gothic Neo, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(
-        formatCurrency(value).replace('₩', ''),
-        x + slotWidth / 2,
-        SLOT_TOP + 38,
-      );
-      ctx.restore();
-    });
-
-    ctx.fillStyle = '#94A3B8';
-    drawRoundedRect(ctx, 38, SLOT_TOP - 8, 76, 18, 9);
-    ctx.fill();
-    ctx.fillStyle = '#CBD5E1';
-    drawRoundedRect(ctx, 54, SLOT_TOP + 8, 42, 20, 10);
-    ctx.fill();
-
-    if (aim.active && !ball.active) {
-      const velocity = getLaunchVelocity(aim.x, aim.y);
-      ctx.save();
-      ctx.strokeStyle = 'rgba(37, 99, 235, 0.5)';
-      ctx.lineWidth = 4;
-      ctx.setLineDash([10, 9]);
-      ctx.beginPath();
-
-      let sampleX = LAUNCH_POINT.x;
-      let sampleY = LAUNCH_POINT.y;
-      const sampleVx = velocity.vx;
-      let sampleVy = velocity.vy;
-
-      ctx.moveTo(sampleX, sampleY);
-      for (let step = 0; step < 26; step += 1) {
-        sampleVy += GRAVITY * 0.055;
-        sampleX += sampleVx * 0.055;
-        sampleY += sampleVy * 0.055;
-        ctx.lineTo(sampleX, sampleY);
-
-        if (sampleY >= SLOT_TOP - BALL_RADIUS) {
-          break;
-        }
-      }
-
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.14)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(LAUNCH_POINT.x, LAUNCH_POINT.y);
-      ctx.lineTo(aim.x, aim.y);
-      ctx.stroke();
-      ctx.restore();
+      ctx.fillText(String(mark), x, AXIS_Y + 30);
     }
 
-    ctx.beginPath();
-    ctx.fillStyle = '#0F172A';
-    ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+    if (hold.active && !missile.active) {
+      const angleDeg = ANGLE_BASE + hold.sweepNormalized * ANGLE_SWEEP;
+      const angleRad = (angleDeg * Math.PI) / 180;
+      const speed = SPEED_BASE + hold.power * SPEED_BY_POWER;
+      let simX = START_X;
+      let simY = START_Y;
+      let simVx = Math.cos(angleRad) * speed;
+      let simVy = Math.sin(angleRad) * speed;
+      let bounces = 0;
 
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([7, 9]);
+      ctx.beginPath();
+      ctx.moveTo(simX - cameraX, simY);
+
+      for (let i = 0; i < 220; i += 1) {
+        simVy += GRAVITY * 0.018;
+        simX += simVx * 0.018;
+        simY += simVy * 0.018;
+
+        if (simY >= FLOOR_Y && simVy > 0) {
+          simY = FLOOR_Y;
+          bounces += 1;
+          if (bounces >= 3) {
+            ctx.lineTo(simX - cameraX, simY);
+            break;
+          }
+          simVy = -Math.max(
+            160,
+            Math.abs(simVy) * (bounces === 1 ? BOUNCE_Y_DAMP_FIRST : BOUNCE_Y_DAMP_SECOND),
+          );
+          simVx *= BOUNCE_X_DAMP;
+        }
+
+        ctx.lineTo(simX - cameraX, simY);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    trailRef.current.forEach((point) => {
+      ctx.beginPath();
+      ctx.globalAlpha = point.life;
+      ctx.fillStyle = '#60A5FA';
+      ctx.arc(point.x - cameraX, point.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+
+    const angleDeg = ANGLE_BASE + hold.sweepNormalized * ANGLE_SWEEP;
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const launcherLength = 66;
+    const launcherX = START_X - cameraX;
+    const muzzleX = launcherX + Math.cos(angleRad) * launcherLength;
+    const muzzleY = START_Y + Math.sin(angleRad) * launcherLength;
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.2)';
+    ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.arc(ball.x - 4, ball.y - 4, 4, 0, Math.PI * 2);
+    ctx.moveTo(launcherX, START_Y);
+    ctx.lineTo(muzzleX, muzzleY);
+    ctx.stroke();
+
+    const drawX = missile.active ? missile.x - cameraX : START_X - cameraX;
+    const drawY = missile.active ? missile.y : START_Y;
+    const rotation = missile.active ? Math.atan2(missile.vy, missile.vx) : angleRad;
+    ctx.save();
+    ctx.translate(drawX, drawY);
+    ctx.rotate(rotation);
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#60A5FA';
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(-30, -7);
+    ctx.lineTo(-30, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.08)';
+    drawRoundedRect(ctx, 30, 76, 16, 96, 8);
+    ctx.fill();
+    ctx.fillStyle = '#3182F6';
+    drawRoundedRect(ctx, 30, 172 - hold.power * 96, 16, hold.power * 96, 8);
     ctx.fill();
   }, []);
 
@@ -230,9 +290,18 @@ export function BalanceBarStage({
       window.clearTimeout(resetTimeoutRef.current);
       resetTimeoutRef.current = null;
     }
-    resetBall();
+    missileRef.current = createMissile();
+    trailRef.current = [];
+    landedAmountRef.current = null;
+    cameraXRef.current = 0;
+    holdRef.current.active = false;
+    holdRef.current.elapsed = 0;
+    holdRef.current.power = MIN_POWER;
+    holdRef.current.sweepDirection = 1;
+    holdRef.current.sweepNormalized = 0.08;
+    window.setTimeout(() => setHoldDisplay(0), 0);
     drawScene();
-  }, [config.id, config.startAmount, drawScene, resetBall]);
+  }, [config.id, config.startAmount, drawScene]);
 
   useEffect(() => {
     if (!active) {
@@ -246,59 +315,84 @@ export function BalanceBarStage({
       const dt = Math.min((now - lastFrame) / 1000, 0.033);
       lastFrame = now;
 
-      const ball = ballRef.current;
-      if (ball.active) {
-        ball.vy += GRAVITY * dt;
-        ball.x += ball.vx * dt;
-        ball.y += ball.vy * dt;
+      const hold = holdRef.current;
+      const missile = missileRef.current;
 
-        if (ball.x <= BALL_RADIUS + SLOT_FRAME_X) {
-          ball.x = BALL_RADIUS + SLOT_FRAME_X;
-          ball.vx *= -0.18;
+      if (hold.active && !missile.active) {
+        hold.elapsed += dt;
+        hold.power = clamp(MIN_POWER + hold.elapsed * POWER_CHARGE_RATE, MIN_POWER, 1);
+        hold.sweepNormalized += dt * 1.06 * hold.sweepDirection;
+        if (hold.sweepNormalized >= 1) {
+          hold.sweepNormalized = 1;
+          hold.sweepDirection = -1;
+        }
+        if (hold.sweepNormalized <= 0) {
+          hold.sweepNormalized = 0;
+          hold.sweepDirection = 1;
+        }
+        setHoldDisplay(hold.power);
+      }
+
+      trailRef.current = trailRef.current
+        .map((point) => ({ ...point, life: point.life - dt * 1.9 }))
+        .filter((point) => point.life > 0);
+
+      if (missile.active) {
+        missile.vy += GRAVITY * dt;
+        missile.x += missile.vx * dt;
+        missile.y += missile.vy * dt;
+
+        if (Math.random() > 0.25) {
+          trailRef.current.push({ life: 0.9, x: missile.x, y: missile.y });
         }
 
-        if (ball.x >= CANVAS_WIDTH - SLOT_FRAME_X - BALL_RADIUS) {
-          ball.x = CANVAS_WIDTH - SLOT_FRAME_X - BALL_RADIUS;
-          ball.vx *= -0.18;
-        }
+        if (missile.y >= FLOOR_Y && missile.vy > 0) {
+          missile.y = FLOOR_Y;
+          missile.bounces += 1;
 
-        if (ball.y >= SLOT_TOP - BALL_RADIUS) {
-          const slotWidth = SLOT_FRAME_WIDTH / SLOT_VALUES.length;
-          const clampedX = clamp(ball.x, SLOT_FRAME_X, SLOT_FRAME_X + SLOT_FRAME_WIDTH - 1);
-          const slotIndex = clamp(
-            Math.floor((clampedX - SLOT_FRAME_X) / slotWidth),
-            0,
-            SLOT_VALUES.length - 1,
-          );
-          const landedValue = SLOT_VALUES[slotIndex];
+          if (missile.bounces >= 3) {
+            missile.active = false;
+            missile.vx = 0;
+            missile.vy = 0;
 
-          ball.active = false;
-          ball.x = SLOT_FRAME_X + slotWidth * slotIndex + slotWidth / 2;
-          ball.y = SLOT_TOP - BALL_RADIUS;
-          ball.vx = 0;
-          ball.vy = 0;
-          landedSlotRef.current = slotIndex;
-          callbacksRef.current.onUpdateAmount(landedValue);
+            const finalAmount = clamp(Math.round(xToAmount(missile.x)), 0, WORLD_MAX);
+            const inTarget = finalAmount >= TARGET_MIN && finalAmount <= TARGET_MAX;
+            landedAmountRef.current = finalAmount;
+            callbacksRef.current.onUpdateAmount(finalAmount);
 
-          if (landedValue === TARGET_VALUE && !successRef.current) {
-            successRef.current = true;
-            vibrate([18, 40, 18]);
-            callbacksRef.current.onSuccess();
-          } else {
-            vibrate(12);
-            if (resetTimeoutRef.current !== null) {
-              window.clearTimeout(resetTimeoutRef.current);
+            if (inTarget && !successRef.current) {
+              successRef.current = true;
+              callbacksRef.current.onSuccess();
+              vibrate([18, 32, 18]);
+            } else {
+              vibrate(12);
+              if (resetTimeoutRef.current !== null) {
+                window.clearTimeout(resetTimeoutRef.current);
+              }
+              resetTimeoutRef.current = window.setTimeout(() => {
+                resetTimeoutRef.current = null;
+                resetMissile();
+                drawScene();
+              }, RESET_DELAY_MS);
             }
-            resetTimeoutRef.current = window.setTimeout(() => {
-              resetBall();
-              drawScene();
-            }, RESET_DELAY_MS);
+          } else {
+            missile.vy = -Math.max(
+              160,
+              Math.abs(missile.vy)
+                * (missile.bounces === 1 ? BOUNCE_Y_DAMP_FIRST : BOUNCE_Y_DAMP_SECOND),
+            );
+            missile.vx *= BOUNCE_X_DAMP;
+            vibrate(8);
           }
         }
       }
 
-      drawScene();
+      const targetCameraX = missile.active || resetTimeoutRef.current !== null || successRef.current
+        ? clamp(missile.x - CAMERA_FOCUS_X, 0, CAMERA_MAX_X)
+        : 0;
+      cameraXRef.current += (targetCameraX - cameraXRef.current) * Math.min(1, dt * 7.6);
 
+      drawScene();
       frameId = window.requestAnimationFrame(tick);
     };
 
@@ -306,77 +400,47 @@ export function BalanceBarStage({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [active, drawScene, resetBall]);
+  }, [active, config.targetAmount, drawScene, resetMissile]);
 
-  const getCanvasPoint = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return {
-      x: ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH,
-      y: ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT,
-    };
-  };
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!active) {
-      return;
-    }
-
-    const point = getCanvasPoint(event);
-    const distance = Math.hypot(point.x - LAUNCH_POINT.x, point.y - LAUNCH_POINT.y);
+  const handleHoldStart = () => {
     if (
-      distance > 74 ||
-      ballRef.current.active ||
+      !active ||
       successRef.current ||
+      missileRef.current.active ||
       resetTimeoutRef.current !== null
     ) {
       return;
     }
+    const hold = holdRef.current;
+    hold.active = true;
+    hold.elapsed = 0;
+    hold.power = MIN_POWER;
+  };
 
-    aimRef.current = {
+  const handleHoldEnd = () => {
+    const hold = holdRef.current;
+    if (!hold.active || successRef.current || missileRef.current.active) {
+      return;
+    }
+    hold.active = false;
+
+    const angleDeg = ANGLE_BASE + hold.sweepNormalized * ANGLE_SWEEP;
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const speed = SPEED_BASE + hold.power * SPEED_BY_POWER;
+
+    missileRef.current = {
       active: true,
-      pointerId: event.pointerId,
-      x: point.x,
-      y: point.y,
+      bounces: 0,
+      vx: Math.cos(angleRad) * speed,
+      vy: Math.sin(angleRad) * speed,
+      x: START_X,
+      y: START_Y,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drawScene();
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!aimRef.current.active || aimRef.current.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const point = getCanvasPoint(event);
-    aimRef.current.x = clamp(point.x, LAUNCH_POINT.x + 18, CANVAS_WIDTH - 36);
-    aimRef.current.y = clamp(point.y, 28, LAUNCH_POINT.y - 10);
-    drawScene();
-  };
-
-  const handlePointerEnd = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!aimRef.current.active || aimRef.current.pointerId !== event.pointerId) {
-      return;
-    }
-
-    const aim = aimRef.current;
-    const distance = Math.hypot(aim.x - LAUNCH_POINT.x, aim.y - LAUNCH_POINT.y);
-    if (distance > 18 && !successRef.current) {
-      const velocity = getLaunchVelocity(aim.x, aim.y);
-      ballRef.current = {
-        active: true,
-        x: LAUNCH_POINT.x,
-        y: LAUNCH_POINT.y,
-        vx: velocity.vx,
-        vy: velocity.vy,
-      };
-      landedSlotRef.current = null;
-      vibrate(16);
-    }
-
-    aimRef.current.active = false;
-    aimRef.current.pointerId = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    drawScene();
+    trailRef.current = [];
+    landedAmountRef.current = null;
+    setHoldDisplay(0);
+    hold.power = MIN_POWER;
+    vibrate(16);
   };
 
   useEffect(
@@ -391,16 +455,20 @@ export function BalanceBarStage({
   return (
     <div className="stage-slot-game">
       <div className="arc-stage arc-stage--compact">
-        <canvas
-          className="arc-stage__canvas"
-          height={CANVAS_HEIGHT}
-          onPointerCancel={handlePointerEnd}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-        />
+        <canvas className="arc-stage__canvas" height={CANVAS_HEIGHT} ref={canvasRef} width={CANVAS_WIDTH} />
+        <div className="arc-stage__controls">
+          <Button
+            color="primary"
+            display="full"
+            onPointerCancel={handleHoldEnd}
+            onPointerDown={handleHoldStart}
+            onPointerLeave={handleHoldEnd}
+            onPointerUp={handleHoldEnd}
+            size="large"
+          >
+            {holdDisplay > 0 ? `미사일 충전 ${Math.round(holdDisplay * 100)}%` : '미사일 발사'}
+          </Button>
+        </div>
       </div>
     </div>
   );

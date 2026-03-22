@@ -2,37 +2,38 @@ import { Button } from '@toss/tds-mobile';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { StageComponentProps } from '../types';
-import { clamp, formatCurrency, vibrate } from '../utils/game';
+import { clamp, vibrate } from '../utils/game';
 
 const CANVAS_WIDTH = 560;
 const CANVAS_HEIGHT = 320;
-const WORLD_WIDTH = 1120;
-const TRACK_Y = 226;
-const START_X = 74;
-const CAMERA_FOCUS_X = 170;
-const RESET_DELAY_MS = 920;
-const TARGET_VALUE = 3000;
-const SCORING_ZONES = [
-  { color: '#93C5FD', radius: 32, value: 900, x: 260 },
-  { color: '#60A5FA', radius: 34, value: 1600, x: 455 },
-  { color: '#34D399', radius: 36, value: 2200, x: 640 },
-  { color: '#2563EB', radius: 40, value: 3000, x: 812 },
-  { color: '#FB923C', radius: 36, value: 1700, x: 982 },
-];
+const WORLD_WIDTH = 1180;
+const SHEET_TOP = 30;
+const SHEET_BOTTOM = 260;
+const STONE_RADIUS = 14;
+const START_X = 90;
+const START_Y = 146;
+const HOUSE_X = 940;
+const HOUSE_Y = 146;
+const TARGET_RADIUS = 24;
+const RESET_DELAY_MS = 900;
 
-interface BallState {
+interface StoneState {
   active: boolean;
+  spin: number;
   vx: number;
-  wobble: number;
+  vy: number;
   x: number;
+  y: number;
 }
 
-function createBall(): BallState {
+function createStone(): StoneState {
   return {
     active: false,
+    spin: 0,
     vx: 0,
-    wobble: 0,
+    vy: 0,
     x: START_X,
+    y: START_Y,
   };
 }
 
@@ -65,138 +66,154 @@ export function PaintingStage({
 }: StageComponentProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const callbacksRef = useRef({ onSuccess, onUpdateAmount });
-  const ballRef = useRef(createBall());
+  const stoneRef = useRef<StoneState>(createStone());
   const cameraXRef = useRef(0);
-  const chargeRef = useRef(0);
-  const chargingRef = useRef(false);
-  const resetTimeoutRef = useRef<number | null>(null);
   const successRef = useRef(false);
+  const resetTimeoutRef = useRef<number | null>(null);
+  const holdRef = useRef({
+    active: false,
+    elapsed: 0,
+    pointerId: null as number | null,
+    power: 0,
+    spin: 0,
+    spinDir: 1 as -1 | 1,
+  });
   const [chargeDisplay, setChargeDisplay] = useState(0);
 
   useEffect(() => {
     callbacksRef.current = { onSuccess, onUpdateAmount };
   }, [onSuccess, onUpdateAmount]);
 
-  const resetBall = useCallback(() => {
-    ballRef.current = createBall();
-    chargeRef.current = 0;
-    chargingRef.current = false;
+  const resetStone = useCallback(() => {
+    stoneRef.current = createStone();
+    holdRef.current.active = false;
+    holdRef.current.elapsed = 0;
+    holdRef.current.pointerId = null;
+    holdRef.current.power = 0;
+    holdRef.current.spin = 0;
+    holdRef.current.spinDir = 1;
     setChargeDisplay(0);
   }, []);
 
-  const drawScene = useCallback((chargeValue: number) => {
+  const evaluateAmount = (distance: number) => {
+    if (distance <= TARGET_RADIUS) {
+      return 3000;
+    }
+    if (distance <= 44) {
+      return 2400;
+    }
+    if (distance <= 66) {
+      return 1700;
+    }
+    if (distance <= 92) {
+      return 900;
+    }
+    return 0;
+  };
+
+  const drawScene = useCallback((charge: number) => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
-
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       return;
     }
 
+    const stone = stoneRef.current;
+    const cameraX = cameraXRef.current;
+    const hold = holdRef.current;
+
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    const background = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    background.addColorStop(0, '#FAFDFF');
-    background.addColorStop(1, '#EAF3FF');
-    ctx.fillStyle = background;
+    const bg = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    bg.addColorStop(0, '#F8FCFF');
+    bg.addColorStop(1, '#EAF4FF');
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    const laneTop = TRACK_Y - 28;
-    const laneHeight = 56;
-    const cameraX = cameraXRef.current;
-    const ball = ballRef.current;
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    drawRoundedRect(ctx, 18, 18, CANVAS_WIDTH - 36, CANVAS_HEIGHT - 36, 30);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.86)';
+    drawRoundedRect(ctx, 16, 14, CANVAS_WIDTH - 32, CANVAS_HEIGHT - 28, 28);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.05)';
-    drawRoundedRect(ctx, 24, laneTop, CANVAS_WIDTH - 48, laneHeight, 28);
+    const sheetX = 24 - cameraX;
+    ctx.fillStyle = '#F7FBFF';
+    drawRoundedRect(ctx, sheetX, SHEET_TOP, WORLD_WIDTH - 48, SHEET_BOTTOM - SHEET_TOP, 24);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(30, 64, 175, 0.14)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    for (let worldX = 120; worldX <= WORLD_WIDTH - 70; worldX += 70) {
-      const screenX = worldX - cameraX;
-      if (screenX < -40 || screenX > CANVAS_WIDTH + 40) {
+    for (let x = 80; x < WORLD_WIDTH - 70; x += 70) {
+      const screenX = x - cameraX;
+      if (screenX < -20 || screenX > CANVAS_WIDTH + 20) {
         continue;
       }
-
-      ctx.strokeStyle = worldX % 140 === 0 ? 'rgba(37, 99, 235, 0.18)' : 'rgba(15, 23, 42, 0.08)';
-      ctx.lineWidth = worldX % 140 === 0 ? 4 : 2;
+      ctx.strokeStyle = x % 140 === 0 ? 'rgba(37, 99, 235, 0.18)' : 'rgba(15, 23, 42, 0.06)';
+      ctx.lineWidth = x % 140 === 0 ? 2 : 1;
       ctx.beginPath();
-      ctx.moveTo(screenX, laneTop - 18);
-      ctx.lineTo(screenX, laneTop + laneHeight + 18);
+      ctx.moveTo(screenX, SHEET_TOP + 10);
+      ctx.lineTo(screenX, SHEET_BOTTOM - 10);
       ctx.stroke();
     }
 
-    SCORING_ZONES.forEach((zone) => {
-      const screenX = zone.x - cameraX;
-      if (screenX < -80 || screenX > CANVAS_WIDTH + 80) {
-        return;
-      }
-
-      ctx.save();
-      ctx.globalAlpha = zone.value === TARGET_VALUE ? 1 : 0.88;
+    const houseScreenX = HOUSE_X - cameraX;
+    const rings = [
+      { color: '#0EA5E9', radius: 92 },
+      { color: '#EF4444', radius: 66 },
+      { color: '#FFFFFF', radius: 44 },
+      { color: '#2563EB', radius: 24 },
+    ];
+    for (const ring of rings) {
       ctx.beginPath();
-      ctx.fillStyle = `${zone.color}22`;
-      ctx.arc(screenX, TRACK_Y, zone.radius + 12, 0, Math.PI * 2);
+      ctx.fillStyle = ring.color;
+      ctx.arc(houseScreenX, HOUSE_Y, ring.radius, 0, Math.PI * 2);
       ctx.fill();
+    }
 
-      ctx.beginPath();
-      ctx.fillStyle = `${zone.color}44`;
-      ctx.arc(screenX, TRACK_Y, zone.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.lineWidth = zone.value === TARGET_VALUE ? 5 : 3;
-      ctx.strokeStyle = zone.value === TARGET_VALUE ? '#2563EB' : zone.color;
-      ctx.arc(screenX, TRACK_Y, zone.radius, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.fillStyle = '#0F172A';
-      ctx.font = `800 ${zone.value === TARGET_VALUE ? 22 : 18}px Pretendard, Apple SD Gothic Neo, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(
-        formatCurrency(zone.value).replace('₩', ''),
-        screenX,
-        TRACK_Y - zone.radius - 26,
-      );
-      ctx.restore();
-    });
-
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.16)';
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.14)';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(36, TRACK_Y + 36);
-    ctx.lineTo(CANVAS_WIDTH - 36, TRACK_Y + 36);
+    ctx.moveTo(houseScreenX - 110, HOUSE_Y);
+    ctx.lineTo(houseScreenX + 110, HOUSE_Y);
+    ctx.moveTo(houseScreenX, HOUSE_Y - 110);
+    ctx.lineTo(houseScreenX, HOUSE_Y + 110);
     ctx.stroke();
 
-    const ballScreenX = ball.x - cameraX;
-    const wobble = Math.sin(ball.wobble) * Math.min(8, ball.vx * 0.01);
+    const stoneX = stone.x - cameraX;
     ctx.beginPath();
     ctx.fillStyle = '#0F172A';
-    ctx.arc(ballScreenX, TRACK_Y + wobble, 15, 0, Math.PI * 2);
+    ctx.arc(stoneX, stone.y, STONE_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.beginPath();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.arc(ballScreenX - 4, TRACK_Y - 4 + wobble, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3;
+    ctx.arc(stoneX, stone.y, STONE_RADIUS - 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(stoneX, stone.y - 1);
+    ctx.rotate(stone.spin);
+    ctx.fillStyle = '#22C55E';
+    drawRoundedRect(ctx, -8, -2, 16, 4, 2);
     ctx.fill();
+    ctx.restore();
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.08)';
-    drawRoundedRect(ctx, 34, 38, 18, 118, 9);
+    drawRoundedRect(ctx, 34, 34, 18, 112, 8);
     ctx.fill();
     ctx.fillStyle = '#3182F6';
-    const barHeight = 118 * chargeValue;
-    drawRoundedRect(ctx, 34, 156 - barHeight, 18, barHeight, 9);
+    drawRoundedRect(ctx, 34, 146 - charge * 112, 18, charge * 112, 8);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.42)';
-    ctx.font = '700 16px Pretendard, Apple SD Gothic Neo, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('START', 34, TRACK_Y - 56);
+    if (hold.active && !stone.active) {
+      ctx.fillStyle = hold.spinDir > 0 ? 'rgba(14, 165, 233, 0.68)' : 'rgba(239, 68, 68, 0.68)';
+      ctx.font = '700 13px Pretendard, Apple SD Gothic Neo, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(hold.spinDir > 0 ? '오른쪽 컬' : '왼쪽 컬', 62, 50);
+    }
   }, []);
 
   useEffect(() => {
@@ -207,9 +224,14 @@ export function PaintingStage({
       window.clearTimeout(resetTimeoutRef.current);
       resetTimeoutRef.current = null;
     }
-    ballRef.current = createBall();
-    chargeRef.current = 0;
-    chargingRef.current = false;
+    stoneRef.current = createStone();
+    holdRef.current.active = false;
+    holdRef.current.elapsed = 0;
+    holdRef.current.pointerId = null;
+    holdRef.current.power = 0;
+    holdRef.current.spin = 0;
+    holdRef.current.spinDir = 1;
+    window.setTimeout(() => setChargeDisplay(0), 0);
     drawScene(0);
   }, [config.id, config.startAmount, drawScene]);
 
@@ -224,55 +246,59 @@ export function PaintingStage({
     const tick = (now: number) => {
       const dt = Math.min((now - lastFrame) / 1000, 0.033);
       lastFrame = now;
+      const hold = holdRef.current;
+      const stone = stoneRef.current;
 
-      const ball = ballRef.current;
-      if (chargingRef.current && !ball.active) {
-        chargeRef.current = clamp(chargeRef.current + dt * 0.88, 0, 1);
-        setChargeDisplay(chargeRef.current);
+      if (hold.active && !stone.active) {
+        hold.elapsed += dt;
+        hold.power = clamp(hold.elapsed * 0.62, 0, 1);
+        if (Math.floor(hold.elapsed * 3.2) % 2 === 1) {
+          hold.spinDir = -1;
+        } else {
+          hold.spinDir = 1;
+        }
+        setChargeDisplay(hold.power);
       }
 
-      if (ball.active) {
-        ball.x += ball.vx * dt;
-        ball.vx = Math.max(0, ball.vx - (190 + ball.vx * 0.95) * dt);
-        ball.wobble += dt * (5.5 + ball.vx * 0.012);
+      if (stone.active) {
+        stone.spin += stone.vx * dt * 0.012;
+        stone.vx = Math.max(0, stone.vx - (180 + stone.vx * 0.68) * dt);
+        stone.vy *= 0.8;
+        stone.x += stone.vx * dt;
+        stone.y = START_Y;
 
-        if (ball.x >= WORLD_WIDTH - 42) {
-          ball.x = WORLD_WIDTH - 42;
-          ball.vx = 0;
-        }
+        if (stone.vx <= 18) {
+          stone.active = false;
+          const distance = Math.hypot(stone.x - HOUSE_X, stone.y - HOUSE_Y);
+          const landedAmount = evaluateAmount(distance);
+          callbacksRef.current.onUpdateAmount(landedAmount);
 
-        if (ball.vx <= 12) {
-          ball.active = false;
-          const landedZone =
-            SCORING_ZONES.find((zone) => Math.abs(zone.x - ball.x) <= zone.radius) ?? null;
-          const landedValue = landedZone?.value ?? 0;
-          callbacksRef.current.onUpdateAmount(landedValue);
-
-          if (landedValue === TARGET_VALUE && !successRef.current) {
+          if (landedAmount === 3000 && !successRef.current) {
             successRef.current = true;
-            vibrate([18, 36, 18]);
             callbacksRef.current.onSuccess();
+            vibrate([18, 34, 18]);
           } else {
             vibrate(12);
             if (resetTimeoutRef.current !== null) {
               window.clearTimeout(resetTimeoutRef.current);
             }
             resetTimeoutRef.current = window.setTimeout(() => {
-              resetBall();
+              resetTimeoutRef.current = null;
+              resetStone();
               drawScene(0);
             }, RESET_DELAY_MS);
           }
         }
-      } else {
-        ball.wobble *= 0.92;
       }
 
-      const targetCameraX = ball.active || resetTimeoutRef.current !== null || successRef.current
-        ? clamp(ball.x - CAMERA_FOCUS_X, 0, WORLD_WIDTH - CANVAS_WIDTH)
-        : 0;
-      cameraXRef.current += (targetCameraX - cameraXRef.current) * Math.min(1, dt * 6.8);
+      const targetCameraX = stone.active
+        ? clamp(stone.x - 170, 0, WORLD_WIDTH - CANVAS_WIDTH)
+        : resetTimeoutRef.current !== null || successRef.current
+          ? clamp(stone.x - 170, 0, WORLD_WIDTH - CANVAS_WIDTH)
+          : 0;
+      cameraXRef.current += (targetCameraX - cameraXRef.current) * Math.min(1, dt * 7);
 
-      drawScene(chargeRef.current);
+      drawScene(hold.power);
       frameId = window.requestAnimationFrame(tick);
     };
 
@@ -280,37 +306,45 @@ export function PaintingStage({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [active, drawScene, resetBall]);
+  }, [active, drawScene, resetStone]);
 
   const handleChargeStart = () => {
     if (
       !active ||
       successRef.current ||
-      ballRef.current.active ||
+      stoneRef.current.active ||
       resetTimeoutRef.current !== null
     ) {
       return;
     }
-
-    chargingRef.current = true;
+    const hold = holdRef.current;
+    hold.active = true;
+    hold.elapsed = 0;
+    hold.power = 0;
+    hold.spin = 0;
+    hold.spinDir = 1;
   };
 
   const handleChargeEnd = () => {
-    if (!chargingRef.current || successRef.current || ballRef.current.active) {
+    const hold = holdRef.current;
+    if (!hold.active || successRef.current || stoneRef.current.active) {
       return;
     }
+    hold.active = false;
+    hold.spin = hold.spinDir * (0.5 + hold.power * 0.7);
 
-    chargingRef.current = false;
-    const power = Math.max(0.12, chargeRef.current);
-    ballRef.current = {
+    stoneRef.current = {
       active: true,
-      vx: 220 + power * 920,
-      wobble: 0,
+      spin: hold.spin,
+      vx: 320 + hold.power * 820,
+      vy: 0,
       x: START_X,
+      y: START_Y,
     };
-    chargeRef.current = 0;
+
     setChargeDisplay(0);
-    vibrate(18);
+    hold.power = 0;
+    vibrate(16);
   };
 
   useEffect(
@@ -331,7 +365,6 @@ export function PaintingStage({
           ref={canvasRef}
           width={CANVAS_WIDTH}
         />
-
         <div className="curling-stage__controls">
           <Button
             color="primary"
@@ -342,7 +375,7 @@ export function PaintingStage({
             onPointerUp={handleChargeEnd}
             size="large"
           >
-            {chargeDisplay > 0 ? `밀기 ${Math.round(chargeDisplay * 100)}%` : '밀기'}
+            {chargeDisplay > 0 ? `스윕 ${Math.round(chargeDisplay * 100)}%` : '스톤 밀기'}
           </Button>
         </div>
       </div>

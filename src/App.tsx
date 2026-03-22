@@ -113,10 +113,11 @@ function App() {
   };
 
   const handleStageAmountUpdate = (nextTotalAmount: number) => {
+    const maxAmount = currentStage.maxAmount ?? currentStage.targetAmount;
     const clampedAmount = clamp(
       nextTotalAmount,
       currentStage.startAmount,
-      currentStage.targetAmount,
+      maxAmount,
     );
 
     setStageAmounts((previousAmounts) => {
@@ -143,10 +144,21 @@ function App() {
       };
     });
 
-    setStageAmounts((previousAmounts) => ({
-      ...previousAmounts,
-      [currentStage.id]: currentStage.targetAmount,
-    }));
+    const shouldLockAmountToTarget =
+      (currentStage.maxAmount ?? currentStage.targetAmount) <= currentStage.targetAmount;
+    if (!shouldLockAmountToTarget) {
+      return;
+    }
+
+    setStageAmounts((previousAmounts) => {
+      if (previousAmounts[currentStage.id] === currentStage.targetAmount) {
+        return previousAmounts;
+      }
+      return {
+        ...previousAmounts,
+        [currentStage.id]: currentStage.targetAmount,
+      };
+    });
   };
 
   const handleAdvance = () => {

@@ -647,9 +647,11 @@
 .breakout-stage,
 .painting-stage,
 .pinball-stage {
+  align-content: start;
   display: grid;
   gap: 14px;
   height: 100%;
+  justify-items: stretch;
   width: 100%;
 }
 
@@ -666,15 +668,18 @@
 .breakout-stage__canvas,
 .painting-stage__canvas,
 .pinball-stage__canvas {
+  aspect-ratio: 560 / 320;
   background: rgba(255, 255, 255, 0.74);
   border: 1px solid rgba(15, 23, 42, 0.06);
   border-radius: 24px;
   display: block;
-  height: 100%;
+  height: auto;
+  max-height: 100%;
   touch-action: none;
   width: 100%;
 }
 
+.arc-stage__controls,
 .curling-stage__controls,
 .painting-stage__stats,
 .pinball-stage__controls {
