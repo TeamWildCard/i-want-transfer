@@ -1,4 +1,5 @@
 import { BalanceBarStage } from '../stages/BalanceBarStage';
+import { MovingKeypadStage } from '../stages/MovingKeypadStage';
 import { PaintingStage } from '../stages/PaintingStage';
 import { PinballStage } from '../stages/PinballStage';
 import type { StageDefinition } from '../types';
@@ -28,7 +29,7 @@ export const STAGES: StageDefinition[] = [
       '투명한 숫자 영역을 손가락으로 채우면 채운 비율만큼 금액이 올라갑니다. 드로잉 중엔 미세 진동이 반복돼요.',
     hint: '캔버스를 그대로 쓱쓱 문질러 주세요. 빈 틈 없이 칠할수록 빠르게 다음 챕터가 열립니다.',
     readyLabel: '거의 다 칠했어요. 2,000원을 확보했으니 다음 난관으로 넘어갈 수 있어요.',
-    ctaLabel: '2,000원 송금하고 마지막 챕터',
+    ctaLabel: '2,000원 송금하고 다음 챕터',
     startAmount: 1000,
     targetAmount: 2000,
     durationSeconds: 30,
@@ -41,12 +42,27 @@ export const STAGES: StageDefinition[] = [
     objective: 'Launch 버튼을 눌렀다 떼어 구슬을 쏘고, 범퍼를 맞춰 정확히 3,000원을 완성하세요.',
     description:
       '하단 Launch 버튼을 길게 누를수록 발사 강도가 세집니다. 범퍼에 맞을 때마다 100원씩 올라갑니다.',
-    hint: '강도를 조절해 좌우 각도를 바꿔보세요. 정확히 3,000원이 되는 순간 최종 송금이 열립니다.',
-    readyLabel: '정확히 3,000원 도달. 마지막 송금 버튼으로 붕어빵 값을 보내면 끝입니다.',
-    ctaLabel: '3,000원 송금 완료하기',
+    hint: '강도를 조절해 좌우 각도를 바꿔보세요. 정확히 3,000원이 되는 순간 다음 챕터가 열립니다.',
+    readyLabel: '정확히 3,000원 도달. 이제 마지막 관문이 남았어요.',
+    ctaLabel: '3,000원 송금하고 마지막 챕터',
     startAmount: 2000,
     targetAmount: 3000,
     durationSeconds: 30,
     Component: PinballStage,
+  },
+  {
+    id: 'moving-keypad',
+    chapter: 'CHAPTER 4',
+    title: 'Moving Keypad',
+    objective: '1,000원을 입력해야 하는데 키패드 버튼이 자꾸 위치를 바꾸네요.',
+    description:
+      '키패드 버튼이 1.5초마다 랜덤하게 섞입니다. 버튼이 이동하기 전에 빠르게 눌러야 해요.',
+    hint: '잘못 눌렀으면 ⌫ 로 지울 수 있어요. 버튼 위치를 미리 파악한 뒤 빠르게 눌러보세요.',
+    readyLabel: '1,000원 추가 입력 완료! 마지막 송금 버튼을 누르면 끝입니다.',
+    ctaLabel: '4,000원 송금 완료하기',
+    startAmount: 3000,
+    targetAmount: 4000,
+    durationSeconds: 30,
+    Component: MovingKeypadStage,
   },
 ];

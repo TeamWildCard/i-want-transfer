@@ -318,7 +318,7 @@ function App() {
 
               {phase === 'game-over' ? (
                 <ResultOverlay
-                  body="30초를 넘겨 버렸어요. 다시 첫 챕터부터 3,000원을 맞춰봅시다."
+                  body={`30초를 넘겨 버렸어요. 다시 첫 챕터부터 ${STAGES[STAGES.length - 1].targetAmount.toLocaleString('ko-KR')}원을 맞춰봅시다.`}
                   ctaLabel="다시 시도"
                   onAction={() => resetGame('playing')}
                   title="게임 오버"
@@ -327,7 +327,7 @@ function App() {
 
               {phase === 'completed' ? (
                 <ResultOverlay
-                  body="따끈붕어빵 사장님께 정확히 3,000원을 보냈어요. 의도적인 불편함 속에서도 송금 성공입니다."
+                  body={`따끈붕어빵 사장님께 정확히 ${STAGES[STAGES.length - 1].targetAmount.toLocaleString('ko-KR')}원을 보냈어요. 의도적인 불편함 속에서도 송금 성공입니다.`}
                   ctaLabel="한 번 더 플레이"
                   onAction={() => resetGame('playing')}
                   onSecondary={() => resetGame('intro')}
