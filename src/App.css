@@ -8,6 +8,48 @@
   position: relative;
 }
 
+.debug-stage-bar {
+  left: 50%;
+  position: fixed;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
+.debug-stage-bar__actions {
+  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.14);
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.debug-stage-bar__button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.62);
+  cursor: pointer;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  align-items: center;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  min-width: 36px;
+  padding: 0 12px;
+}
+
+.debug-stage-bar__button--active {
+  background: #3182f6;
+  color: #ffffff;
+}
+
 .ambient {
   filter: blur(18px);
   pointer-events: none;
@@ -56,7 +98,7 @@
 }
 
 .phone-device--intro {
-  min-height: 760px;
+  min-height: 860px;
 }
 
 .phone-notch {
@@ -86,7 +128,7 @@
 }
 
 .phone-screen--intro {
-  min-height: 732px;
+  min-height: 832px;
 }
 
 .phone-topbar,
@@ -128,6 +170,13 @@
 
 .transfer-card--intro {
   margin-top: 8px;
+}
+
+.transfer-card--selectable {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .transfer-card__label {
@@ -229,13 +278,54 @@
 }
 
 .stage-frame {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  height: 430px;
   position: relative;
 }
 
 .stage-frame__inner {
   height: 100%;
+}
+
+.stage-slot-game {
+  height: 100%;
+}
+
+.keypad-slot {
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(255, 255, 255, 0.96) 100%);
+  inset: 0;
+  position: absolute;
+  transition: opacity 0.18s ease;
+  z-index: 2;
+}
+
+.recipient-slot {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+}
+
+.keypad-slot--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.keypad-slot--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.stage-floating-cta {
+  bottom: 14px;
+  left: 14px;
+  position: absolute;
+  right: 14px;
+  z-index: 3;
+}
+
+.stage-frame__inner--intro {
+  display: flex;
 }
 
 .stage-panel {
@@ -293,17 +383,6 @@
   line-height: 1.5;
 }
 
-.stage-cta {
-  display: grid;
-  gap: 12px;
-}
-
-.stage-cta__hint {
-  color: rgba(15, 23, 42, 0.58);
-  font-size: 14px;
-  min-height: 42px;
-}
-
 .intro-shell {
   display: grid;
   gap: 22px;
@@ -332,6 +411,21 @@
   height: 100%;
 }
 
+.intro-flow {
+  display: grid;
+  gap: 18px;
+  height: 100%;
+}
+
+.intro-preview--amount {
+  display: flex;
+  flex-direction: column;
+}
+
+.intro-preview--recipient {
+  align-content: start;
+}
+
 .intro-preview__contact {
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(15, 23, 42, 0.06);
@@ -339,6 +433,14 @@
   display: grid;
   gap: 10px;
   padding: 20px;
+}
+
+.intro-preview__contact--button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
 }
 
 .intro-preview__helper {
@@ -350,6 +452,15 @@
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: auto;
+}
+
+.intro-keypad--slot {
+  height: 100%;
+}
+
+.intro-keypad--inline {
+  margin-top: auto;
 }
 
 .intro-keypad__key {
@@ -363,6 +474,14 @@
   font-weight: 700;
   height: 64px;
   justify-content: center;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.intro-keypad__key:active {
+  transform: scale(0.98);
 }
 
 .intro-chapter-card {
@@ -388,6 +507,25 @@
 .intro-actions {
   display: flex;
   justify-content: center;
+}
+
+.intro-panel {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 100%;
+  padding: 18px;
+}
+
+.intro-panel__hint {
+  color: rgba(15, 23, 42, 0.56);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .balance-board {
@@ -508,7 +646,13 @@
 .pinball-stage {
   display: grid;
   gap: 14px;
+  height: 100%;
   width: 100%;
+}
+
+.painting-stage--compact,
+.pinball-stage--compact {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .painting-stage__canvas,
@@ -517,6 +661,7 @@
   border: 1px solid rgba(15, 23, 42, 0.06);
   border-radius: 24px;
   display: block;
+  height: 100%;
   touch-action: none;
   width: 100%;
 }
@@ -610,6 +755,10 @@
     border-radius: 24px;
     min-height: calc(100svh - 64px);
     padding: 52px 14px 16px;
+  }
+
+  .stage-frame {
+    height: 360px;
   }
 
   .stage-tabs {

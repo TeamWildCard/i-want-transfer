@@ -22,6 +22,10 @@ export function useStageTimer({
   }, [onExpire]);
 
   useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+
     const frameId = window.requestAnimationFrame(() => {
       const startAt = performance.now();
       setEndAtMs(startAt + durationSeconds * 1000);
@@ -31,7 +35,7 @@ export function useStageTimer({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [durationSeconds, resetKey]);
+  }, [active, durationSeconds, resetKey]);
 
   useEffect(() => {
     if (!active || endAtMs === 0) {

@@ -15,48 +15,49 @@ const screenVariants = {
 export function IntroSequence({ onComplete }: IntroSequenceProps) {
   const [step, setStep] = useState(0);
   const completedRef = useRef(false);
+  const finishTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timers = [
       window.setTimeout(() => setStep(1), 700),
       window.setTimeout(() => setStep(2), 1700),
-      window.setTimeout(() => setStep(3), 2850),
-      window.setTimeout(() => {
-        if (!completedRef.current) {
-          completedRef.current = true;
-          onComplete();
-        }
-      }, 4200),
     ];
 
     return () => {
       timers.forEach(window.clearTimeout);
+      if (finishTimeoutRef.current !== null) {
+        window.clearTimeout(finishTimeoutRef.current);
+      }
     };
   }, [onComplete]);
 
-  const handleSkip = () => {
+  const finishIntro = () => {
     if (completedRef.current) {
       return;
     }
 
     completedRef.current = true;
-    onComplete();
+    if (finishTimeoutRef.current !== null) {
+      window.clearTimeout(finishTimeoutRef.current);
+    }
+    finishTimeoutRef.current = window.setTimeout(() => {
+      onComplete();
+    }, 220);
+  };
+
+  const handleSkip = () => {
+    finishIntro();
+  };
+
+  const handleKeypadClick = () => {
+    finishIntro();
   };
 
   const showAmountScreen = step >= 2;
-  const showChapterCard = step >= 3;
 
   return (
     <div className="intro-shell">
       <div className="intro-copy">
-        <motion.p
-          animate={{ opacity: 1, y: 0 }}
-          className="intro-copy__eyebrow"
-          initial={{ opacity: 0, y: 18 }}
-          transition={{ duration: 0.5 }}
-        >
-          STORY MODE
-        </motion.p>
         <motion.h1
           animate={{ opacity: 1, y: 0 }}
           className="intro-copy__title"
@@ -67,15 +68,6 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
           <br />
           송금해야 하는 상황.
         </motion.h1>
-        <motion.p
-          animate={{ opacity: 1, y: 0 }}
-          className="intro-copy__body"
-          initial={{ opacity: 0, y: 18 }}
-          transition={{ delay: 0.2, duration: 0.55 }}
-        >
-          자, 이제 토스를 켜고 송금을 해볼까? 쉽다고 생각한 순간부터
-          게임이 시작돼요.
-        </motion.p>
       </div>
 
       <motion.div
@@ -86,7 +78,7 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
       >
         <div className="phone-notch" />
         <div className="phone-screen phone-screen--intro">
-          <div className="intro-preview__status">
+          <div className="phone-topbar">
             <span className="story-badge">따끈붕어빵 미션</span>
             <span className="timer-badge">곧 시작</span>
           </div>
@@ -95,7 +87,7 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
             {showAmountScreen ? (
               <motion.div
                 animate="animate"
-                className="intro-preview"
+                className="intro-preview intro-preview--amount"
                 exit="exit"
                 initial="enter"
                 key="amount"
@@ -110,31 +102,20 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
                   <div className="transfer-card__amount">₩0</div>
                 </div>
 
-                <motion.div
-                  animate={{ opacity: showChapterCard ? 0 : 1 }}
-                  className="intro-keypad"
-                  transition={{ duration: 0.4 }}
-                >
+                <motion.div className="intro-keypad" transition={{ duration: 0.4 }}>
                   {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '←'].map(
                     (key) => (
-                      <div className="intro-keypad__key" key={key}>
+                      <button
+                        aria-label={`${key} 키`}
+                        className="intro-keypad__key"
+                        key={key}
+                        onClick={handleKeypadClick}
+                        type="button"
+                      >
                         {key}
-                      </div>
+                      </button>
                     ),
                   )}
-                </motion.div>
-
-                <motion.div
-                  animate={{
-                    opacity: showChapterCard ? 1 : 0,
-                    y: showChapterCard ? 0 : 28,
-                  }}
-                  className="intro-chapter-card"
-                  transition={{ duration: 0.45 }}
-                >
-                  <span className="intro-chapter-card__eyebrow">CHAPTER 1</span>
-                  <strong>Balance Bar</strong>
-                  <p>30초 안에 1,000원을 맞춰 송금 버튼을 열어보세요.</p>
                 </motion.div>
               </motion.div>
             ) : (
@@ -151,9 +132,6 @@ export function IntroSequence({ onComplete }: IntroSequenceProps) {
                   <strong className="transfer-card__recipient">
                     따끈붕어빵 사장님
                   </strong>
-                  <p className="intro-preview__helper">
-                    이미 입력돼 있어요. 이제 금액만 넣으면 끝일 줄 알았죠.
-                  </p>
                 </div>
               </motion.div>
             )}

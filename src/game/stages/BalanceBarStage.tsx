@@ -2,8 +2,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { StageComponentProps } from '../types';
-import { clamp, formatCurrency, normalizeProgress, vibrate } from '../utils/game';
-import { StagePanel } from '../components/StagePanel';
+import { clamp, vibrate } from '../utils/game';
 
 type Side = 'left' | 'right';
 
@@ -24,7 +23,6 @@ const INITIAL_VISUAL: VisualState = { angleDeg: 0, ballX: 0, ballY: 0 };
 export function BalanceBarStage({
   active,
   config,
-  totalAmount,
   onSuccess,
   onUpdateAmount,
 }: StageComponentProps) {
@@ -181,12 +179,7 @@ export function BalanceBarStage({
   };
 
   return (
-    <StagePanel
-      description={config.description}
-      footer={config.hint}
-      progress={normalizeProgress(totalAmount, config.startAmount, config.targetAmount)}
-      stats={`${formatCurrency(totalAmount)} / ${formatCurrency(config.targetAmount)}`}
-    >
+    <div className="stage-slot-game">
       <div
         className="balance-board"
         onPointerCancel={handlePointerEnd}
@@ -218,17 +211,6 @@ export function BalanceBarStage({
           style={{ transform: `translate(${visual.ballX}px, ${visual.ballY}px)` }}
         />
       </div>
-
-      <div className="balance-legend">
-        <div className="balance-legend__item">
-          <span className="balance-legend__dot balance-legend__dot--center" />
-          중앙 존에 구슬을 머물게 하면 금액이 차올라요.
-        </div>
-        <div className="balance-legend__item">
-          <span className="balance-legend__dot balance-legend__dot--drag" />
-          화면 왼쪽/오른쪽을 누른 채 위아래로 끌어 각 사이드를 조절하세요.
-        </div>
-      </div>
-    </StagePanel>
+    </div>
   );
 }

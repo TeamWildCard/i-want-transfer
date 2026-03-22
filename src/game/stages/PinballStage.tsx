@@ -1,12 +1,11 @@
 import { Button } from '@toss/tds-mobile';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { StagePanel } from '../components/StagePanel';
 import type { StageComponentProps } from '../types';
-import { clamp, formatCurrency, normalizeProgress, vibrate } from '../utils/game';
+import { clamp, vibrate } from '../utils/game';
 
 const CANVAS_WIDTH = 560;
-const CANVAS_HEIGHT = 620;
+const CANVAS_HEIGHT = 320;
 
 interface Ball {
   active: boolean;
@@ -73,7 +72,7 @@ function createBall(): Ball {
     vx: 0,
     vy: 0,
     x: CANVAS_WIDTH / 2,
-    y: CANVAS_HEIGHT - 60,
+    y: CANVAS_HEIGHT - 52,
   };
 }
 
@@ -136,16 +135,16 @@ export function PinballStage({
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.06)';
-    drawRoundedRect(ctx, CANVAS_WIDTH / 2 - 42, CANVAS_HEIGHT - 170, 84, 112, 20);
+    drawRoundedRect(ctx, CANVAS_WIDTH / 2 - 42, CANVAS_HEIGHT - 124, 84, 74, 20);
     ctx.fill();
 
     ctx.fillStyle = '#0F172A';
     ctx.font = '700 26px Apple SD Gothic Neo, Pretendard, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('3,000원', CANVAS_WIDTH / 2, 66);
+    ctx.fillText('3,000원', CANVAS_WIDTH / 2, 52);
     ctx.font = '500 16px Apple SD Gothic Neo, Pretendard, sans-serif';
     ctx.fillStyle = 'rgba(15, 23, 42, 0.56)';
-    ctx.fillText('범퍼를 맞춰 정확히 도달하세요', CANVAS_WIDTH / 2, 92);
+    ctx.fillText('범퍼를 맞춰 정확히 도달하세요', CANVAS_WIDTH / 2, 76);
 
     scene.bumpers.forEach((bumper) => {
       ctx.beginPath();
@@ -184,9 +183,9 @@ export function PinballStage({
     ctx.arc(ball.x - 4, ball.y - 4, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    const powerHeight = 180 * chargeValue;
+    const powerHeight = 110 * chargeValue;
     ctx.fillStyle = 'rgba(49, 130, 246, 0.12)';
-    drawRoundedRect(ctx, 46, CANVAS_HEIGHT - 228, 16, 180, 8);
+    drawRoundedRect(ctx, 46, CANVAS_HEIGHT - 158, 16, 110, 8);
     ctx.fill();
     ctx.fillStyle = '#3182F6';
     drawRoundedRect(ctx, 46, CANVAS_HEIGHT - 48 - powerHeight, 16, powerHeight, 8);
@@ -364,7 +363,7 @@ export function PinballStage({
       vx: (power - 0.5) * 360,
       vy: -(560 + power * 520),
       x: CANVAS_WIDTH / 2,
-      y: CANVAS_HEIGHT - 72,
+      y: CANVAS_HEIGHT - 56,
     };
 
     chargeRef.current = 0;
@@ -373,13 +372,8 @@ export function PinballStage({
   };
 
   return (
-    <StagePanel
-      description={config.description}
-      footer={config.hint}
-      progress={normalizeProgress(totalAmount, config.startAmount, config.targetAmount)}
-      stats={`남은 금액 ${formatCurrency(config.targetAmount - totalAmount)}`}
-    >
-      <div className="pinball-stage">
+    <div className="stage-slot-game">
+      <div className="pinball-stage pinball-stage--compact">
         <canvas
           className="pinball-stage__canvas"
           height={CANVAS_HEIGHT}
@@ -388,11 +382,6 @@ export function PinballStage({
         />
 
         <div className="pinball-stage__controls">
-          <div className="pinball-stage__chip">
-            <span>현재 금액</span>
-            <strong>{formatCurrency(totalAmount)}</strong>
-          </div>
-
           <Button
             color="primary"
             display="full"
@@ -408,6 +397,6 @@ export function PinballStage({
           </Button>
         </div>
       </div>
-    </StagePanel>
+    </div>
   );
 }

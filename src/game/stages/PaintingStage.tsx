@@ -1,18 +1,16 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
-import { StagePanel } from '../components/StagePanel';
 import type { StageComponentProps } from '../types';
-import { clamp, formatCurrency, normalizeProgress, vibrate } from '../utils/game';
+import { clamp, vibrate } from '../utils/game';
 
 const CANVAS_WIDTH = 560;
-const CANVAS_HEIGHT = 320;
+const CANVAS_HEIGHT = 260;
 const DRAW_TEXT = '3000';
 
 export function PaintingStage({
   active,
   config,
-  totalAmount,
   onSuccess,
   onUpdateAmount,
 }: StageComponentProps) {
@@ -25,7 +23,6 @@ export function PaintingStage({
   const lastPublishedAmountRef = useRef(config.startAmount);
   const lastVibrateAtRef = useRef(0);
   const successRef = useRef(false);
-  const [coverage, setCoverage] = useState(0);
 
   useEffect(() => {
     callbacksRef.current = { onSuccess, onUpdateAmount };
@@ -83,8 +80,6 @@ export function PaintingStage({
   }, []);
 
   const publishCoverage = (nextCoverage: number) => {
-    setCoverage(nextCoverage);
-
     const nextAmount = clamp(
       config.startAmount +
         Math.round((config.targetAmount - config.startAmount) * nextCoverage),
@@ -232,13 +227,8 @@ export function PaintingStage({
   };
 
   return (
-    <StagePanel
-      description={config.description}
-      footer={config.hint}
-      progress={normalizeProgress(totalAmount, config.startAmount, config.targetAmount)}
-      stats={`${Math.round(coverage * 100)}% 채움`}
-    >
-      <div className="painting-stage">
+    <div className="stage-slot-game">
+      <div className="painting-stage painting-stage--compact">
         <canvas
           className="painting-stage__canvas"
           height={CANVAS_HEIGHT}
@@ -249,18 +239,7 @@ export function PaintingStage({
           ref={canvasRef}
           width={CANVAS_WIDTH}
         />
-
-        <div className="painting-stage__stats">
-          <div className="painting-stage__chip">
-            <span>현재 금액</span>
-            <strong>{formatCurrency(totalAmount)}</strong>
-          </div>
-          <div className="painting-stage__chip">
-            <span>성공 기준</span>
-            <strong>95%</strong>
-          </div>
-        </div>
       </div>
-    </StagePanel>
+    </div>
   );
 }
