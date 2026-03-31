@@ -1,4 +1,6 @@
+import { AccountSearchStage } from '../stages/AccountSearchStage';
 import { BalanceBarStage } from '../stages/BalanceBarStage';
+import { MovingKeypadStage } from '../stages/MovingKeypadStage';
 import { PaintingStage } from '../stages/PaintingStage';
 import { PinballStage } from '../stages/PinballStage';
 import type { StageDefinition } from '../types';
@@ -46,5 +48,35 @@ export const STAGES: StageDefinition[] = [
     targetAmount: 3000,
     durationSeconds: 30,
     Component: PinballStage,
+  },
+  {
+    id: 'moving-keypad',
+    chapter: 'CHAPTER 4',
+    title: 'Moving Keypad',
+    objective: '1,000원을 입력해야 하는데 키패드 버튼이 자꾸 위치를 바꾸네요.',
+    description:
+      '키패드 버튼이 1.5초마다 랜덤하게 섞입니다. 버튼이 이동하기 전에 빠르게 눌러야 해요.',
+    hint: '잘못 눌렀으면 ⌫ 로 지울 수 있어요. 버튼 위치를 미리 파악한 뒤 빠르게 눌러보세요.',
+    readyLabel: '3,000원 입력 완료! 마지막 송금 버튼을 누르면 끝입니다.',
+    ctaLabel: '3,000원 송금하고 마지막 챕터',
+    startAmount: 0,
+    targetAmount: 3000,
+    durationSeconds: 30,
+    Component: MovingKeypadStage,
+  },
+  {
+    id: 'account-search',
+    chapter: 'CHAPTER 5',
+    title: 'Account Search',
+    objective: '비슷한 이름의 계좌 20개 중 정확히 "따끈붕어빵 사장님"을 찾아야 해요.',
+    description:
+      '글자 하나씩 다른 가짜 계좌들이 섞여 있어요. 꼼꼼히 읽고 올바른 수신인을 선택하세요.',
+    hint: '이름만 보지 말고 은행 이름과 계좌 끝 번호도 참고해보세요. 토스뱅크 ****4729가 정답이에요.',
+    readyLabel: '올바른 수신인을 찾았어요! 이제 최종 송금 버튼을 누르세요.',
+    ctaLabel: '3,000원 최종 송금 완료',
+    startAmount: 0,
+    targetAmount: 3000,
+    durationSeconds: 30,
+    Component: AccountSearchStage,
   },
 ];
